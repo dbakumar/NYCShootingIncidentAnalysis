@@ -1,0 +1,153 @@
+---
+title: "NYC Shooting Incident Analysis"
+author: "MS-DS Student"
+date: "2/26/2022"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## New York City Historical Shooting Incident Analysis
+
+1. NYPD Shooting Incident Data (Historic) - data source from <https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD>
+
+2. Setting up libraries needed for data analysis
+
+```{r get_datasouce_from_url }
+library(tidyverse)
+library(readr)
+library(lubridate)
+
+URL_IN<-"https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+nypd_shooting_hist<-read_csv(URL_IN)
+
+
+```
+
+### To perform the data cleanup and tidy work
+Since Data already in one row for each incident, we have to remov unwanted columns in data set for analysis including convert incident occur date from char data type to date type conversion
+
+```{r data_clean_and_tidywork }
+nypd_shooting_hist <- nypd_shooting_hist %>% 
+  mutate(OCCUR_DATE  = mdy(OCCUR_DATE)) %>%
+  select (-c(X_COORD_CD,Y_COORD_CD,Latitude,Longitude,Lon_Lat))
+
+```
+
+### Print summary information to understand key detail in each column of shooting incident report data
+``` {r print_summary_info_raw_data  }
+summary(nypd_shooting_hist)
+```
+
+### Find the shooting rate on each NY City Borough to understand which part of the city shooting is high and low.
+``` {r nypd_shooting_by_boro}
+nycy_boro_level_count_by_year <- nypd_shooting_hist %>%
+  mutate(month = format(OCCUR_DATE, "%m"), year = format(OCCUR_DATE, "%Y")) %>%
+  group_by(year, BORO) %>%
+  summarize(shooting_incident_count = n())
+
+print(nycy_boro_level_count_by_year)
+
+```
+
+
+### Understand NYCity Shooting Incidient by Borough over the years through Visualization. It is clearly state that Brooklyn has more shooting incident compare to other borough's and decline in 2017-2018 and its skyrocked again 2019-2020 across NYC. 
+ 
+
+```{r plot_nycy_shooting_inci_by_boro_over_year}
+nycy_boro_level_count_by_year %>%
+     ggplot( aes(x=year, y=shooting_incident_count, group=BORO, color=BORO)) +
+     geom_line()
+  
+```
+
+### To understand which race is most victim for shooting incidents and age group distribution across NY City. 
+
+1. the first visualization helps to know how race plays vital role in shooting incident by comparing victim race vs suspect race. the BLACK community has more shooting incident in NY city within them where compare to inter-RACE shooting incidents.    
+
+2. the second visualization helps to know historically victim age group 18-24 had more shooting incidents from 2006 to 2013 and then supersede by victim age group 25-44. Also the recent years the young kids victim age group <18 significantly reduced compare to 2006-2015 which double amount as recent years 2016-2020.    
+
+```{r get_victim_race_age_grp_stats}
+nycy_shooting_victim_by_race_by_age_grp <- nypd_shooting_hist %>%
+  filter(PERP_RACE !="NA" & PERP_RACE !="UNKNOWN" & VIC_RACE !="UNKNOWN") %>%
+  mutate(month = format(OCCUR_DATE, "%m"), year = format(OCCUR_DATE, "%Y")) %>%
+  group_by(year,VIC_RACE,VIC_AGE_GROUP,PERP_RACE,PERP_AGE_GROUP) %>%
+  summarize(shooting_incident_count = n())
+
+ 
+nycy_shooting_victim_by_race_by_age_grp %>%
+  ggplot(aes(fill=VIC_RACE,y=shooting_incident_count, x=PERP_RACE)) + 
+  geom_bar(position="stack", stat="identity") + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+nycy_shooting_victim_by_race_by_age_grp %>%
+  ggplot(aes(fill=VIC_AGE_GROUP,y=shooting_incident_count, x=year)) + 
+  geom_bar(position="dodge", stat="identity")
+
+```
+
+### To find the Age group play roles in shooting incident by analysis victim & suspect age group data. Based on visualization, the age group of suspect 18-24 has very high activity in shooting incidents similar to mid age group 25-44. 
+
+```{r find_age_group_in_shooting_inc}
+nycy_age_group_shooting_inci_stat <- nypd_shooting_hist %>%
+  filter(PERP_AGE_GROUP != "" &  PERP_AGE_GROUP !="UNKNOWN" & VIC_AGE_GROUP !="" &   VIC_AGE_GROUP !="UNKNOWN" & PERP_AGE_GROUP!=1020 & PERP_AGE_GROUP!=940 & PERP_AGE_GROUP!=224 )  %>%
+  group_by(PERP_AGE_GROUP,VIC_AGE_GROUP) %>%
+  summarize(shooting_incident_count = n())
+
+nycy_age_group_shooting_inci_stat %>%
+  ggplot(aes(fill=VIC_AGE_GROUP,y=shooting_incident_count, x=PERP_AGE_GROUP )) +
+  geom_bar(position="dodge", stat="identity")
+```
+
+### To find the trend in shooting incident historically in NYC over different weather seasons.
+The visualization helps to understand in summer month of May to Sep has double the amount of shooting incidents compare to winter month Nov to Mar. 
+
+```{r find_any_season_matter }
+nycy_montth_year_shooting_inci_stat <- nypd_shooting_hist %>%
+  mutate(month = format(OCCUR_DATE, "%m"), year = format(OCCUR_DATE, "%Y")) %>%
+  group_by(month,year) %>%
+  summarize(shooting_incident_count = n())
+
+nycy_montth_year_shooting_inci_stat %>%
+  ggplot(aes(fill=year,y=shooting_incident_count, x=month)) +
+  geom_bar(position="dodge", stat="identity")
+
+
+```
+
+### To prepare the Model based on month of the year related to shooting incidents count in NYC.  
+
+1. The predicted model doesn't fit well with actual shooting incidents as related to seasonal changes like summer vs winter months activity changes for people.  
+
+```{r develop_model_based_on_month_of_the_year}
+
+nycy_montth_year_shooting_inci_stat <- nypd_shooting_hist %>%
+  mutate(month = as.numeric(format(OCCUR_DATE, "%m"))) %>%
+  group_by(month) %>%
+  summarize(shooting_incident_count = n())
+
+mod<-lm(shooting_incident_count ~  month, data = nycy_montth_year_shooting_inci_stat )
+summary(mod)
+
+nycy_montth_year_shooting_inci_stat_with_pred <- nycy_montth_year_shooting_inci_stat %>%
+  mutate(pred = predict(mod))
+
+nycy_montth_year_shooting_inci_stat_with_pred %>%
+  ggplot() +
+  geom_point(aes(x=month, y=shooting_incident_count), color="red") +
+  geom_point(aes(x=month, y=pred), color="blue")  + 
+  scale_x_continuous(breaks = seq(1, 12, by = 1), "month of the year")
+  
+```
+
+### My point of view about Bias in data source and personal bias mitigation
+NYPD police officer may be biased to suspect more Black people which may possible sources of bias including missing unknown data not provide concrete fact. I thought Race play significant role in shooting incident but i don't want conclude as other factor indeed consider like age group, population density and social economic factors of suspect's & victim's including housing and transportation. 
+
+### Reference session info
+```{r session_info_print}
+sessionInfo()
+```
